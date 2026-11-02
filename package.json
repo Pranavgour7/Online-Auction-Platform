@@ -8,7 +8,7 @@
     "server": "npm --prefix server run server",
     "client": "npm --prefix client start",
     "dev": "npx concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm --prefix server run server\" \"npm --prefix client start\"",
-    "build": "cd client && npm install && npm run build",
+    "build": "cd client && npm install --legacy-peer-deps && npm run build",
     "seed": "node server/seed.js",
     "test": "cd client && npm test -- --watchAll=false",
     "test:server": "cd server && npm test",
