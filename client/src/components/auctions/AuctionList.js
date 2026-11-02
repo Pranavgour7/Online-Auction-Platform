@@ -1,383 +1,298 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import AuthContext from '../../context/AuthContext';
-import { useSocket } from '../../context/SocketContext';
+import { API_BASE_URL, formatImageUrl } from '../../config/api';
 
-const AuctionList = ({ showAlert }) => {
-  const { isAuthenticated, user } = useContext(AuthContext);
-  const socket = useSocket();
-  
+const AuctionList = ({ isAuthenticated, showAlert }) => {
   const [auctions, setAuctions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  
   const [filters, setFilters] = useState({
-    status: 'active',  // Default to show active auctions
+    status: 'active',
     category: '',
-    seller: ''
+    search: ''
   });
-  
-  // Subscribe to real-time auction updates
+
   useEffect(() => {
-    if (socket && socket.socket) {
-      console.log('Setting up socket listeners for auction updates');
-      
-      // Listen for new auctions
-      socket.socket.on('newAuction', (auction) => {
-        console.log('New auction received via socket:', auction);
-        setAuctions(prevAuctions => {
-          // Check if auction already exists in the list
-          const exists = prevAuctions.some(a => a._id === auction._id);
-          if (!exists && auction.status === filters.status) {
-            console.log('Adding new auction to list');
-            return [auction, ...prevAuctions];
-          }
-          return prevAuctions;
-        });
-      });
-      
-      // Listen for auction updates
-      socket.socket.on('auctionUpdated', (updatedAuction) => {
-        console.log('Auction update received via socket:', updatedAuction);
-        setAuctions(prevAuctions => 
-          prevAuctions.map(auction => 
-            auction._id === updatedAuction._id ? updatedAuction : auction
-          )
-        );
-      });
-      
-      // Listen for auction status changes
-      socket.socket.on('auctionStatusChanged', (updatedAuction) => {
-        console.log('Auction status change received via socket:', updatedAuction);
-        setAuctions(prevAuctions => {
-          // If the auction's status no longer matches our filter, remove it
-          if (filters.status && updatedAuction.status !== filters.status) {
-            return prevAuctions.filter(auction => auction._id !== updatedAuction._id);
-          }
-          
-          // Otherwise update it
-          return prevAuctions.map(auction => 
-            auction._id === updatedAuction._id ? updatedAuction : auction
-          );
-        });
-      });
-      
-      return () => {
-        console.log('Cleaning up socket listeners for auction updates');
-        socket.socket.off('newAuction');
-        socket.socket.off('auctionUpdated');
-        socket.socket.off('auctionStatusChanged');
-      };
-    }
-  }, [socket, filters.status]);
-  
-  useEffect(() => {
+    document.title = 'Live Auctions | AuctionHub Real-Time Marketplace';
+    
     const fetchAuctions = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
-        console.log('Fetching auctions with filters:', filters);
-        
-        // Build query string for filters
         const queryParams = new URLSearchParams();
         queryParams.append('page', currentPage);
+        queryParams.append('limit', 9);
         
-        if (filters.status) {
-          queryParams.append('status', filters.status);
-        }
+        if (filters.status) queryParams.append('status', filters.status);
+        if (filters.category) queryParams.append('category', filters.category);
+        if (filters.search) queryParams.append('search', filters.search);
         
-        if (filters.category) {
-          queryParams.append('category', filters.category);
-        }
+        const res = await axios.get(`${API_BASE_URL}/api/auctions?${queryParams.toString()}`);
         
-        if (filters.seller) {
-          queryParams.append('seller', filters.seller);
-        }
-        
-        const res = await axios.get(`http://localhost:5000/api/auctions?${queryParams.toString()}`);
-        
-        if (res.data && res.data.auctions) {
-          setAuctions(res.data.auctions);
+        if (res.data) {
+          setAuctions(res.data.auctions || []);
           setTotalPages(res.data.totalPages || 1);
-        } else {
-          console.error('Unexpected API response format:', res.data);
-          setAuctions([]);
-          setTotalPages(1);
+          setTotalCount(res.data.total || (res.data.auctions ? res.data.auctions.length : 0));
         }
-        
         setLoading(false);
       } catch (err) {
         console.error('Error fetching auctions:', err);
-        showAlert('Error loading auctions', 'danger');
+        showAlert && showAlert('Error loading auctions', 'danger');
         setLoading(false);
-        setAuctions([]);
       }
     };
     
     fetchAuctions();
-    // Debug information
-    console.log('Fetching auctions with filters:', filters);
   }, [currentPage, filters, showAlert]);
   
-  const handleFilterChange = e => {
+  const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setFilters({
-      ...filters,
-      [name]: value
-    });
-    setCurrentPage(1); // Reset to first page when filter changes
-    
-    // Debug information
-    console.log(`Filter changed: ${name} = ${value}`);
+    setFilters(prev => ({ ...prev, [name]: value }));
+    setCurrentPage(1);
+  };
+
+  const handleStatusTab = (status) => {
+    setFilters(prev => ({ ...prev, status }));
+    setCurrentPage(1);
   };
   
   const handlePageChange = (pageNumber) => {
     setCurrentPage(pageNumber);
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   
-  // Calculate time remaining
-  const getTimeRemaining = (endTime) => {
+  const formatTimeLeft = (endTime) => {
     const now = new Date();
     const end = new Date(endTime);
-    const timeRemaining = end - now;
+    const diff = end - now;
     
-    if (timeRemaining <= 0) {
-      return 'Ended';
-    }
+    if (diff <= 0) return 'Ended';
     
-    const days = Math.floor(timeRemaining / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((timeRemaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
     
-    if (days > 0) {
-      return `${days}d ${hours}h`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    } else {
-      return `${minutes}m ${Math.floor((timeRemaining % (1000 * 60)) / 1000)}s`;
-    }
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m remaining`;
   };
-  
+
   return (
-    <div className="container py-5">
-      <div className="row mb-4">
-        <div className="col-md-8">
-          <h1 className="text-primary">Auctions</h1>
-          <p className="lead text-muted">Browse and bid on available auctions.</p>
+    <div className="container py-4">
+      {/* Editorial Page Header */}
+      <div className="d-flex flex-wrap justify-content-between align-items-end mb-4 pb-3 border-bottom">
+        <div>
+          <div className="metric-label text-primary">Live Marketplace</div>
+          <h1 className="fw-extrabold mb-1 fs-2">Auctions Catalog</h1>
+          <p className="text-muted small mb-0">
+            {totalCount} {totalCount === 1 ? 'auction' : 'auctions'} verified and active for real-time bidding.
+          </p>
         </div>
-        <div className="col-md-4 text-md-end">
-          {isAuthenticated && (
-            <Link to="/create-product" className="btn btn-primary">
-              <i className="fas fa-plus-circle me-2"></i>Create Auction
+        <div className="mt-3 mt-md-0 d-flex gap-2">
+          {isAuthenticated ? (
+            <Link to="/create-product" className="btn btn-primary btn-sm">
+              <i className="fas fa-plus"></i>
+              <span>Create Auction</span>
+            </Link>
+          ) : (
+            <Link to="/login" className="btn btn-outline-custom btn-sm">
+              <i className="fas fa-sign-in-alt"></i>
+              <span>Sign In to Bid</span>
             </Link>
           )}
         </div>
       </div>
-      
-      {/* Filter Options */}
-      <div className="card shadow border-0 rounded-3 mb-4">
-        <div className="card-header bg-light p-3">
-          <h5 className="mb-0">
-            <i className="fas fa-filter me-2"></i> Filter Auctions
-          </h5>
+
+      {/* Filter and Search Bar */}
+      <div className="filter-bar">
+        {/* Status Pills */}
+        <div className="d-flex flex-wrap gap-2 mb-3 pb-3 border-bottom">
+          <button
+            type="button"
+            className={`btn btn-sm ${filters.status === '' ? 'btn-primary' : 'btn-outline-custom'}`}
+            onClick={() => handleStatusTab('')}
+          >
+            All Auctions
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filters.status === 'active' ? 'btn-primary' : 'btn-outline-custom'}`}
+            onClick={() => handleStatusTab('active')}
+          >
+            <span className="pulse-dot"></span>
+            Live Now
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filters.status === 'pending' ? 'btn-primary' : 'btn-outline-custom'}`}
+            onClick={() => handleStatusTab('pending')}
+          >
+            Upcoming
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filters.status === 'completed' ? 'btn-primary' : 'btn-outline-custom'}`}
+            onClick={() => handleStatusTab('completed')}
+          >
+            Past / Completed
+          </button>
         </div>
-        <div className="card-body">
-          <div className="row">
-            <div className="col-md-4 mb-3 mb-md-0">
-              <label htmlFor="statusFilter" className="form-label">Auction Status</label>
-              <select
-                id="statusFilter"
-                name="status"
-                className="form-select"
-                value={filters.status}
-                onChange={handleFilterChange}
-              >
-                <option value="">All Statuses</option>
-                <option value="active">Active Auctions</option>
-                <option value="pending">Upcoming Auctions</option>
-                <option value="completed">Completed Auctions</option>
-                <option value="cancelled">Cancelled Auctions</option>
-              </select>
-            </div>
-            <div className="col-md-4 mb-3 mb-md-0">
-              <label htmlFor="categoryFilter" className="form-label">Product Category</label>
-              <select
-                id="categoryFilter"
-                name="category"
-                className="form-select"
-                value={filters.category}
-                onChange={handleFilterChange}
-              >
-                <option value="">All Categories</option>
-                <option value="Electronics">Electronics</option>
-                <option value="Computers">Computers & Accessories</option>
-                <option value="MobilePhones">Mobile Phones & Tablets</option>
-                <option value="Clothing">Clothing & Fashion</option>
-                <option value="Home">Home & Garden</option>
-                <option value="Collectibles">Collectibles & Art</option>
-                <option value="Sports">Sports Equipment</option>
-                <option value="Toys">Toys & Games</option>
-                <option value="Books">Books & Media</option>
-                <option value="Jewelry">Jewelry & Watches</option>
-                <option value="Automotive">Automotive</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div className="col-md-4">
-              <label htmlFor="sellerFilter" className="form-label">Seller</label>
+
+        {/* Input Controls */}
+        <div className="row g-3">
+          <div className="col-md-7">
+            <div className="input-group">
+              <span className="input-group-text">
+                <i className="fas fa-search"></i>
+              </span>
               <input
                 type="text"
-                id="sellerFilter"
-                name="seller"
+                name="search"
                 className="form-control"
-                value={filters.seller}
+                placeholder="Search auctions by title, model, brand or keywords..."
+                value={filters.search}
                 onChange={handleFilterChange}
-                placeholder="Enter seller name or ID"
               />
             </div>
           </div>
-        </div>
-      </div>
-      
-      {/* Auctions List */}
-      {loading ? (
-        <div className="d-flex justify-content-center my-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
+          <div className="col-md-5">
+            <select
+              name="category"
+              className="form-select"
+              value={filters.category}
+              onChange={handleFilterChange}
+            >
+              <option value="">All Categories</option>
+              <option value="Electronics">Electronics & Computing</option>
+              <option value="Collectibles">Rare Collectibles & Art</option>
+              <option value="Fashion">Designer Fashion & Footwear</option>
+              <option value="Jewelry">Horology & Jewelry</option>
+              <option value="Vehicles">Automotive & Memorabilia</option>
+              <option value="Other">Other Curated Items</option>
+            </select>
           </div>
         </div>
-      ) : auctions && auctions.length > 0 ? (
-        <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-          {auctions.map(auction => (
-            <div className="col" key={auction._id}>
-              <div className="card h-100 shadow-sm auction-card fade-in">
-                <div className="position-relative">
+      </div>
+
+      {/* Auction Grid */}
+      {loading ? (
+        <div className="text-center py-5">
+          <div className="spinner-border text-secondary" role="status"></div>
+          <p className="text-muted small mt-2">Loading marketplace auctions...</p>
+        </div>
+      ) : auctions.length > 0 ? (
+        <div className="row g-4">
+          {auctions.map((auction) => (
+            <div className="col-md-6 col-lg-4" key={auction._id}>
+              <div className="card-custom h-100 d-flex flex-column">
+                <div className="auction-img-container">
                   <img
-                    src={auction.product && auction.product.images && auction.product.images.length > 0
-                      ? auction.product.images[0].startsWith('http')
-                        ? auction.product.images[0]
-                        : `http://localhost:5000${auction.product.images[0]}`
-                      : `https://via.placeholder.com/300x200?text=${auction.product ? auction.product.name : 'Auction Item'}`}
-                    className="card-img-top"
-                    alt={auction.product ? auction.product.name : 'Auction Item'}
-                    style={{ height: '200px', objectFit: 'cover' }}
+                    src={formatImageUrl(auction.product?.images?.[0])}
+                    alt={auction.product?.name || 'Auction Item'}
                   />
-                  <div className="position-absolute top-0 end-0 p-2">
-                    <span className={`badge ${
-                      auction.status === 'active' ? 'bg-success' : 
-                      auction.status === 'pending' ? 'bg-warning' : 
-                      auction.status === 'completed' ? 'bg-info' : 'bg-danger'
-                    }`}>
-                      {auction.status === 'active' ? 'Active' : 
-                       auction.status === 'pending' ? 'Upcoming' : 
-                       auction.status === 'completed' ? 'Completed' : 'Cancelled'}
+                  <div className="position-absolute top-0 end-0 m-2">
+                    {auction.status === 'active' && (
+                      <span className="live-pill">
+                        <span className="pulse-dot"></span>
+                        Live
+                      </span>
+                    )}
+                    {auction.status === 'pending' && (
+                      <span className="pending-pill">
+                        Upcoming
+                      </span>
+                    )}
+                    {auction.status === 'completed' && (
+                      <span className="ended-pill">
+                        Ended
+                      </span>
+                    )}
+                  </div>
+                  <div className="position-absolute bottom-0 start-0 m-2">
+                    <span className="category-badge">
+                      {auction.product?.category || 'Curated'}
                     </span>
                   </div>
                 </div>
-                <div className="card-body">
-                  <h5 className="card-title">{auction.product ? auction.product.name : 'Unknown Item'}</h5>
-                  <p className="card-text text-truncate-2">
-                    {auction.product ? auction.product.description : 'No description available'}
+
+                <div className="p-4 d-flex flex-column flex-grow-1">
+                  <h5 className="fw-bold text-dark text-truncate mb-1">
+                    {auction.product?.name || 'Curated Lot'}
+                  </h5>
+                  <p className="text-muted small text-truncate-2 mb-3">
+                    {auction.product?.description || 'Authentic lot verified by platform standards.'}
                   </p>
-                  
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <span className="badge bg-secondary">
-                      {auction.product ? auction.product.category : 'Unknown Category'}
-                    </span>
-                    <span className="badge bg-info">
-                      {auction.product ? auction.product.condition : 'Unknown Condition'}
-                    </span>
-                  </div>
-                  
-                  <div className="d-flex justify-content-between align-items-center">
-                    <div>
-                      <p className="fw-bold text-success mb-0">Current Bid: ${auction.currentBid}</p>
-                      <small className="text-muted">
-                        {auction.currentHighestBidder ? 
-                          `Highest Bidder: ${auction.currentHighestBidder.username || 'Unknown'}` : 
-                          'No bids yet'}
-                      </small>
+
+                  <div className="mt-auto pt-3 border-top">
+                    <div className="d-flex justify-content-between align-items-end mb-3">
+                      <div>
+                        <div className="metric-label">Current Bid</div>
+                        <div className="metric-value">
+                          ${(auction.currentBid || auction.startingBid || 0).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="text-end">
+                        <div className="metric-label">Time Remaining</div>
+                        <div className="fw-semibold text-dark small">
+                          {auction.status === 'active' ? formatTimeLeft(auction.endTime) : 
+                           auction.status === 'pending' ? `Starts ${new Date(auction.startTime).toLocaleDateString()}` : 'Completed'}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-end">
-                      <p className="mb-0">
-                        <small className="text-muted">
-                          {auction.status === 'active' ? (
-                            <>Ends in: {getTimeRemaining(auction.endTime)}</>
-                          ) : auction.status === 'pending' ? (
-                            <>Starts: {new Date(auction.startTime).toLocaleDateString()}</>
-                          ) : (
-                            <>Ended: {new Date(auction.endTime).toLocaleDateString()}</>
-                          )}
-                        </small>
-                      </p>
+
+                    <div className="d-flex justify-content-between align-items-center mb-3 text-muted small">
+                      <span><i className="fas fa-gavel me-1"></i>{auction.totalBids || 0} bids placed</span>
+                      <span><i className="far fa-eye me-1"></i>{auction.views || 0} watching</span>
                     </div>
+
+                    <Link to={`/auctions/${auction._id}`} className="btn btn-primary w-100">
+                      {auction.status === 'active' ? 'Enter Bidding Room' : 'View Lot Details'}
+                    </Link>
                   </div>
-                </div>
-                <div className="card-footer bg-white">
-                  <Link to={`/auctions/${auction._id}`} className="btn btn-primary w-100">
-                    {auction.status === 'active' ? 'View & Bid' : 'View Details'}
-                  </Link>
                 </div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="alert alert-info text-center p-5">
-          <i className="fas fa-info-circle fa-3x mb-3"></i>
-          <h4>No auctions found</h4>
-          <p>No auctions match your current filters. Try adjusting your search criteria or check back later.</p>
-          {isAuthenticated && (
-            <Link to="/create-product" className="btn btn-primary mt-3">
-              Create Your First Auction
-            </Link>
-          )}
+        <div className="text-center py-5 bg-white border rounded-3 p-4">
+          <i className="fas fa-search fs-2 text-muted mb-3 d-block"></i>
+          <h5 className="fw-bold mb-1">No matching auctions found</h5>
+          <p className="text-muted small mb-3">Adjust your status filter or search keywords to view other available lots.</p>
+          <button
+            type="button"
+            className="btn btn-outline-custom btn-sm me-2"
+            onClick={() => setFilters({ status: '', category: '', search: '' })}
+          >
+            Clear Filters
+          </button>
+          <Link to="/create-product" className="btn btn-primary btn-sm">
+            Create an Auction
+          </Link>
         </div>
       )}
-      
-      {/* Debug Info - Remove in production */}
-      <div className="mt-3 p-3 bg-light rounded small">
-        <h6>Debug Information:</h6>
-        <p>Current Filters: Status={filters.status || 'none'}, Category={filters.category || 'none'}, Seller={filters.seller || 'none'}</p>
-        <p>Auctions Found: {auctions ? auctions.length : 0}</p>
-        <p>Current Page: {currentPage} of {totalPages}</p>
-      </div>
-      
+
       {/* Pagination */}
       {totalPages > 1 && (
-        <nav className="mt-4">
+        <nav className="mt-5">
           <ul className="pagination justify-content-center">
             <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
-              <button
-                className="page-link"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
+              <button className="page-link" onClick={() => handlePageChange(currentPage - 1)}>
                 Previous
               </button>
             </li>
-            
             {[...Array(totalPages).keys()].map(page => (
-              <li
-                key={page + 1}
-                className={`page-item ${currentPage === page + 1 ? 'active' : ''}`}
-              >
-                <button
-                  className="page-link"
-                  onClick={() => handlePageChange(page + 1)}
-                >
+              <li key={page + 1} className={`page-item ${currentPage === page + 1 ? 'active' : ''}`}>
+                <button className="page-link" onClick={() => handlePageChange(page + 1)}>
                   {page + 1}
                 </button>
               </li>
             ))}
-            
             <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
-              <button
-                className="page-link"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
+              <button className="page-link" onClick={() => handlePageChange(currentPage + 1)}>
                 Next
               </button>
             </li>
@@ -388,4 +303,4 @@ const AuctionList = ({ showAlert }) => {
   );
 };
 
-export default AuctionList; 
+export default AuctionList;

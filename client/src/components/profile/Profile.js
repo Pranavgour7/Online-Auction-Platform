@@ -139,56 +139,58 @@ const Profile = ({ showAlert }) => {
       <div className="row">
         {/* Left Sidebar - User Info */}
         <div className="col-lg-3 mb-4">
-          <div className="card shadow border-0 rounded-3 overflow-hidden">
-            <div className="card-header bg-gradient-primary-to-secondary p-4 text-center">
+          <div className="card-custom overflow-hidden mb-4">
+            <div className="p-4 text-center text-white" style={{ backgroundColor: 'var(--slate-900)' }}>
               <div className="mb-3">
                 <ImageWithFallback
                   src={user.avatar}
                   fallbackSrc={generateAvatar(displayName)}
                   alt={displayName}
-                  className="rounded-circle img-fluid mx-auto d-block"
-                  style={{ width: "120px", height: "120px", objectFit: "cover" }}
+                  className="rounded-circle img-fluid mx-auto d-block border border-2 border-white shadow-sm"
+                  style={{ width: "96px", height: "96px", objectFit: "cover" }}
                 />
               </div>
-              <h4 className="text-white mb-1">{displayName}</h4>
-              <p className="text-white-50 mb-0">@{user.username}</p>
+              <h4 className="text-white mb-1 fw-bold">{displayName}</h4>
+              <p className="mb-0 small fw-medium" style={{ color: '#cbd5e1' }}>@{user.username}</p>
             </div>
             <div className="card-body p-0">
               <ul className="list-group list-group-flush">
                 <li className="list-group-item d-flex align-items-center py-3">
                   <i className="fas fa-envelope text-primary me-3"></i>
                   <div>
-                    <small className="text-muted d-block">Email</small>
-                    {user.email}
+                    <small className="metric-label d-block text-muted">Email</small>
+                    <span className="text-dark fw-medium">{user.email}</span>
                   </div>
                 </li>
                 <li className="list-group-item d-flex align-items-center py-3">
                   <i className="fas fa-phone text-primary me-3"></i>
                   <div>
-                    <small className="text-muted d-block">Phone</small>
-                    {phoneNumber || 'Not provided'}
+                    <small className="metric-label d-block text-muted">Phone</small>
+                    <span className="text-dark fw-medium">{phoneNumber || 'Not provided'}</span>
                   </div>
                 </li>
                 <li className="list-group-item d-flex align-items-center py-3">
                   <i className="fas fa-map-marker-alt text-primary me-3"></i>
                   <div>
-                    <small className="text-muted d-block">Location</small>
-                    {address.city && address.country ? `${address.city}, ${address.country}` : 'Not provided'}
+                    <small className="metric-label d-block text-muted">Location</small>
+                    <span className="text-dark fw-medium">{address.city && address.country ? `${address.city}, ${address.country}` : 'Not provided'}</span>
                   </div>
                 </li>
                 <li className="list-group-item d-flex align-items-center py-3">
                   <i className="fas fa-user-shield text-primary me-3"></i>
                   <div>
-                    <small className="text-muted d-block">Account Type</small>
-                    {user.role === 'admin' ? 'Administrator' : 'Regular User'}
+                    <small className="metric-label d-block text-muted">Account Type</small>
+                    <span className="badge bg-light text-dark border fw-semibold mt-1">
+                      {user.role === 'admin' ? 'Administrator' : 'Verified Bidder'}
+                    </span>
                   </div>
                 </li>
               </ul>
             </div>
-            <div className="card-footer bg-light p-3">
+            <div className="card-footer bg-light p-3 border-top">
               <div className="d-grid gap-2">
-                <Link to="/dashboard" className="btn btn-outline-primary">
-                  <i className="fas fa-tachometer-alt me-2"></i>Dashboard
+                <Link to="/dashboard" className="btn btn-outline-custom btn-sm">
+                  <i className="fas fa-tachometer-alt me-2"></i>Go to Dashboard
                 </Link>
               </div>
             </div>
@@ -197,7 +199,7 @@ const Profile = ({ showAlert }) => {
         
         {/* Right Content Area - Forms */}
         <div className="col-lg-9">
-          <div className="card shadow border-0 rounded-3 mb-4">
+          <div className="card-custom mb-4">
             <div className="card-header bg-white p-3 border-bottom">
               <ul className="nav nav-tabs card-header-tabs">
                 <li className="nav-item">

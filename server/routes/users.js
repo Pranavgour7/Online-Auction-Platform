@@ -12,49 +12,60 @@ router.post('/register', async (req, res) => {
   try {
     const { username, email, password, firstName, lastName, phoneNumber, address } = req.body;
 
-    // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ message: 'User already exists' });
+    if (!username || !email || !password) {
+      return res.status(400).json({ message: 'Username, email and password are required' });
     }
 
-    user = await User.findOne({ username });
-    if (user) {
-      return res.status(400).json({ message: 'Username already taken' });
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // Check if user already exists
+    let existingEmail = await User.findOne({ email: email.toLowerCase() });
+    if (existingEmail) {
+      return res.status(400).json({ message: 'An account with this email already exists' });
+    }
+
+    let existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({ message: 'Username is already taken' });
     }
 
     // Create new user
-    user = new User({
-      username,
-      email,
+    const user = new User({
+      username: username.trim(),
+      email: email.trim().toLowerCase(),
       password,
-      firstName,
-      lastName,
-      phoneNumber,
-      address
+      firstName: firstName?.trim(),
+      lastName: lastName?.trim(),
+      phoneNumber: phoneNumber?.trim(),
+      address: address || {}
     });
 
     await user.save();
 
     // Create JWT token
-    const payload = {
-      id: user.id
-    };
+    const payload = { id: user.id };
+    const token = jwt.sign(
+      payload, 
+      process.env.JWT_SECRET || 'default_jwt_secret_dev', 
+      { expiresIn: '7d' }
+    );
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
-
-    res.json({
+    res.status(201).json({
       token,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName
       }
     });
   } catch (error) {
-    console.error(error.message);
-    res.status(500).send('Server error');
+    console.error('Error during registration:', error.message);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
@@ -65,8 +76,18 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check if user exists
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    // Check if user exists by email or username
+    const user = await User.findOne({
+      $or: [
+        { email: email.trim().toLowerCase() },
+        { username: email.trim() }
+      ]
+    });
+
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -78,11 +99,12 @@ router.post('/login', async (req, res) => {
     }
 
     // Create JWT token
-    const payload = {
-      id: user.id
-    };
-
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+    const payload = { id: user.id };
+    const token = jwt.sign(
+      payload, 
+      process.env.JWT_SECRET || 'default_jwt_secret_dev', 
+      { expiresIn: '7d' }
+    );
 
     res.json({
       token,
@@ -90,12 +112,16 @@ router.post('/login', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        address: user.address
       }
     });
   } catch (error) {
-    console.error(error.message);
-    res.status(500).send('Server error');
+    console.error('Error during login:', error.message);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
@@ -105,10 +131,13 @@ router.post('/login', async (req, res) => {
 router.get('/profile', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
     res.json(user);
   } catch (error) {
-    console.error(error.message);
-    res.status(500).send('Server error');
+    console.error('Error fetching profile:', error.message);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
@@ -119,14 +148,12 @@ router.put('/profile', auth, async (req, res) => {
   try {
     const { firstName, lastName, phoneNumber, address } = req.body;
     
-    // Build profile object
     const userFields = {};
-    if (firstName) userFields.firstName = firstName;
-    if (lastName) userFields.lastName = lastName;
-    if (phoneNumber) userFields.phoneNumber = phoneNumber;
-    if (address) userFields.address = address;
+    if (firstName !== undefined) userFields.firstName = firstName.trim();
+    if (lastName !== undefined) userFields.lastName = lastName.trim();
+    if (phoneNumber !== undefined) userFields.phoneNumber = phoneNumber.trim();
+    if (address !== undefined) userFields.address = address;
 
-    // Update user
     const user = await User.findByIdAndUpdate(
       req.user.id, 
       { $set: userFields },
@@ -135,8 +162,8 @@ router.put('/profile', auth, async (req, res) => {
 
     res.json(user);
   } catch (error) {
-    console.error(error.message);
-    res.status(500).send('Server error');
+    console.error('Error updating profile:', error.message);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
@@ -147,24 +174,28 @@ router.put('/password', auth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     
-    // Get user
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    }
+
     const user = await User.findById(req.user.id);
-    
-    // Check current password
     const isMatch = await user.comparePassword(currentPassword);
     if (!isMatch) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
     
-    // Update password
     user.password = newPassword;
     await user.save();
     
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
-    console.error(error.message);
-    res.status(500).send('Server error');
+    console.error('Error changing password:', error.message);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-module.exports = router; 
+module.exports = router;

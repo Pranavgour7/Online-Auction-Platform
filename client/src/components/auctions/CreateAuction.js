@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { API_BASE_URL, formatImageUrl } from '../../config/api';
 
 const CreateAuction = ({ showAlert }) => {
   const { productId } = useParams();
@@ -13,60 +14,55 @@ const CreateAuction = ({ showAlert }) => {
   const [isScheduled, setIsScheduled] = useState(false);
   const [formData, setFormData] = useState({
     product: productId || '',
-    startTime: new Date(), // Default to now (immediate start)
-    endTime: new Date(Date.now() + 24 * 60 * 60 * 1000), // Default to 1 day from now
+    startTime: new Date(),
+    endTime: new Date(Date.now() + 24 * 60 * 60 * 1000), // Default 1 day
     startingBid: '',
-    minBidIncrement: 1
+    minBidIncrement: 10
   });
   
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
-  // Fetch product details if productId is provided
+
   useEffect(() => {
+    document.title = 'Create Auction | Auction Platform';
+    
     const fetchData = async () => {
       try {
         setLoading(true);
+        const userProductsRes = await axios.get(`${API_BASE_URL}/api/products/user/me`);
         
-        // If productId is provided, fetch that specific product
-        if (productId) {
-          const res = await axios.get(`http://localhost:5000/api/products/${productId}`);
-          setProduct(res.data);
-          
-          // Set starting bid to product's starting price by default
-          setFormData(prevState => ({
-            ...prevState,
-            startingBid: res.data.startingPrice,
-            product: res.data._id
-          }));
-        }
-        
-        // Always fetch user's products for the dropdown
-        const userProductsRes = await axios.get('http://localhost:5000/api/products/user/me');
-        
-        if (userProductsRes.data.length === 0) {
-          showAlert('You need to create a product first before creating an auction', 'info');
+        if (!userProductsRes.data || userProductsRes.data.length === 0) {
+          showAlert('Please list a product first before scheduling an auction.', 'info');
           navigate('/create-product');
           return;
         }
         
         setUserProducts(userProductsRes.data);
         
-        // If no specific product was selected, use the first one as default
-        if (!productId && userProductsRes.data.length > 0) {
-          const defaultProduct = userProductsRes.data[0];
-          setProduct(defaultProduct);
-          setFormData(prevState => ({
-            ...prevState,
-            product: defaultProduct._id,
-            startingBid: defaultProduct.startingPrice
+        let targetProduct = null;
+        if (productId) {
+          targetProduct = userProductsRes.data.find(p => p._id === productId);
+          if (!targetProduct) {
+            const res = await axios.get(`${API_BASE_URL}/api/products/${productId}`);
+            targetProduct = res.data;
+          }
+        } else {
+          targetProduct = userProductsRes.data[0];
+        }
+
+        if (targetProduct) {
+          setProduct(targetProduct);
+          setFormData(prev => ({
+            ...prev,
+            product: targetProduct._id,
+            startingBid: targetProduct.startingPrice || 10
           }));
         }
         
         setLoading(false);
       } catch (err) {
-        console.error('Error fetching data:', err);
-        showAlert('Error loading product details', 'danger');
+        console.error('Error fetching products:', err);
+        showAlert('Error loading products for auction', 'danger');
         setLoading(false);
         navigate('/dashboard');
       }
@@ -81,456 +77,265 @@ const CreateAuction = ({ showAlert }) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
   
-  const handleProductChange = async (e) => {
+  const handleProductChange = (e) => {
     const newProductId = e.target.value;
-    setFormData({ ...formData, product: newProductId });
-    
-    try {
-      // Find the product in already loaded products
-      const selectedProduct = userProducts.find(p => p._id === newProductId);
-      if (selectedProduct) {
-        setProduct(selectedProduct);
-        setFormData(prevState => ({
-          ...prevState,
-          product: selectedProduct._id,
-          startingBid: selectedProduct.startingPrice
-        }));
-      } else {
-        // If not found (shouldn't happen), fetch it
-        const res = await axios.get(`http://localhost:5000/api/products/${newProductId}`);
-        setProduct(res.data);
-        setFormData(prevState => ({
-          ...prevState,
-          startingBid: res.data.startingPrice
-        }));
-      }
-    } catch (err) {
-      console.error('Error fetching product:', err);
-      showAlert('Error loading product details', 'danger');
+    const selected = userProducts.find(p => p._id === newProductId);
+    if (selected) {
+      setProduct(selected);
+      setFormData(prev => ({
+        ...prev,
+        product: selected._id,
+        startingBid: selected.startingPrice || 10
+      }));
     }
   };
   
   const onSubmit = async e => {
     e.preventDefault();
     
-    // Form validation
     if (!selectedProductId) {
-      showAlert('Please select a product', 'danger');
+      showAlert('Please select a product to auction', 'danger');
       return;
     }
     
-    // Only check if start time is in the future if it's a scheduled auction
-    if (isScheduled && new Date(startTime) < new Date()) {
-      showAlert('Start time must be in the future', 'danger');
+    const start = isScheduled ? new Date(startTime) : new Date();
+    const end = new Date(endTime);
+    
+    if (end <= start) {
+      showAlert('End time must be after the start time', 'danger');
       return;
     }
     
-    if (new Date(endTime) <= new Date(startTime)) {
-      showAlert('End time must be after start time', 'danger');
-      return;
-    }
-    
-    if (startingBid <= 0) {
-      showAlert('Starting bid must be greater than 0', 'danger');
-      return;
-    }
-    
-    if (minBidIncrement <= 0) {
-      showAlert('Minimum bid increment must be greater than 0', 'danger');
+    if (parseFloat(startingBid) <= 0) {
+      showAlert('Starting bid must be greater than zero', 'danger');
       return;
     }
     
     setSubmitting(true);
     
     try {
-      // Get token from local storage
-      const token = localStorage.getItem('token');
-      
-      if (!token) {
-        showAlert('You need to be logged in to create an auction', 'danger');
-        setSubmitting(false);
-        return;
-      }
-      
-      // Set Authorization header
-      const config = {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      };
-      
-      // If not scheduled, use current time as start time
-      const actualStartTime = isScheduled ? startTime : new Date();
-      
-      // Format dates as ISO strings for consistent handling
-      const auctionData = {
+      const payload = {
         product: selectedProductId,
-        startTime: actualStartTime.toISOString(),
-        endTime: endTime.toISOString(),
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
         startingBid: parseFloat(startingBid),
-        minBidIncrement: parseFloat(minBidIncrement)
+        minBidIncrement: parseFloat(minBidIncrement || 1)
       };
       
-      console.log('Submitting auction data:', auctionData);
-      
-      const res = await axios.post('http://localhost:5000/api/auctions', auctionData, config);
-      
-      console.log('Auction created:', res.data);
-      showAlert('Auction created successfully!', 'success');
+      const res = await axios.post(`${API_BASE_URL}/api/auctions`, payload);
+      showAlert('Auction launched successfully!', 'success');
       navigate(`/auctions/${res.data._id}`);
     } catch (err) {
       console.error('Error creating auction:', err);
-      let errorMessage = 'Error creating auction';
-      
-      if (err.response) {
-        console.error('Server response:', err.response.data);
-        errorMessage = err.response.data.message || errorMessage;
-      }
-      
-      showAlert(errorMessage, 'danger');
+      showAlert(err.response?.data?.message || 'Error creating auction', 'danger');
       setSubmitting(false);
     }
   };
-  
-  // Calculate suggested end times
-  const getSuggestedEndTimes = () => {
-    const now = new Date();
-    return [
-      { label: '1 Day', value: new Date(now.getTime() + 24 * 60 * 60 * 1000) },
-      { label: '3 Days', value: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) },
-      { label: '7 Days', value: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) },
-      { label: '14 Days', value: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000) },
-    ];
+
+  const setDurationHours = (hours) => {
+    const base = isScheduled ? new Date(startTime) : new Date();
+    setFormData(prev => ({
+      ...prev,
+      endTime: new Date(base.getTime() + hours * 60 * 60 * 1000)
+    }));
   };
-  
-  const handleQuickEndTime = (date) => {
-    setFormData({ ...formData, endTime: date });
-  };
-  
+
   if (loading) {
     return (
-      <div className="d-flex justify-content-center my-5">
+      <div className="d-flex justify-content-center my-5 py-5">
         <div className="spinner-border text-primary" role="status">
           <span className="visually-hidden">Loading...</span>
         </div>
       </div>
     );
   }
-  
+
   return (
-    <div className="container py-5">
-      <div className="row mb-4">
-        <div className="col-md-8">
-          <h1 className="text-primary">Create Auction</h1>
-          <p className="lead text-muted">Set up an auction for your product.</p>
+    <div className="container py-4">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h1 className="fw-bold mb-1">Launch Auction</h1>
+          <p className="text-muted mb-0">Set duration, reserve starting price, and live bidding parameters.</p>
         </div>
-        <div className="col-md-4 text-md-end">
-          <Link to="/dashboard" className="btn btn-outline-primary">
-            <i className="fas fa-arrow-left me-2"></i>Back to Dashboard
-          </Link>
-        </div>
+        <Link to="/dashboard" className="btn btn-outline-secondary">
+          <i className="fas fa-arrow-left me-1"></i> Dashboard
+        </Link>
       </div>
-      
-      <div className="row">
+
+      <div className="row g-4">
         <div className="col-lg-8">
-          <div className="card shadow border-0 rounded-3 mb-4">
-            <div className="card-header bg-gradient-primary-to-secondary p-4">
-              <h5 className="mb-0 text-white fw-bold">Auction Details</h5>
-            </div>
-            <div className="card-body p-4">
-              <form onSubmit={onSubmit}>
-                {/* Product Selection */}
-                <div className="mb-4">
-                  <label htmlFor="product" className="form-label fw-bold">Select Product*</label>
-                  <select
-                    className="form-select form-select-lg"
-                    id="product"
-                    name="product"
-                    value={selectedProductId}
-                    onChange={handleProductChange}
-                    required
-                  >
-                    <option value="">Select a product to auction</option>
-                    {userProducts.map(prod => (
-                      <option key={prod._id} value={prod._id}>
-                        {prod.name} - ${prod.startingPrice}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                
-                {/* Selected Product Preview */}
-                {product && (
-                  <div className="card mb-4 bg-light">
-                    <div className="card-body">
-                      <h6 className="fw-bold mb-3">Selected Product</h6>
-                      <div className="row">
-                        <div className="col-md-4 mb-3 mb-md-0">
-                          <img
-                            src={product.images && product.images.length > 0
-                              ? product.images[0].startsWith('http')
-                                ? product.images[0]
-                                : `http://localhost:5000${product.images[0]}`
-                              : `https://via.placeholder.com/200x150?text=${product.name}`}
-                            alt={product.name}
-                            className="img-fluid rounded"
-                            style={{ maxHeight: '150px', objectFit: 'cover' }}
-                          />
-                        </div>
-                        <div className="col-md-8">
-                          <h5 className="card-title">{product.name}</h5>
-                          <p className="card-text text-truncate">{product.description}</p>
-                          <div className="d-flex justify-content-between">
-                            <span className="badge bg-secondary">{product.category}</span>
-                            <span className="badge bg-primary">{product.condition}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Schedule Auction Toggle */}
-                <div className="form-check form-switch mb-4">
-                  <input
-                    className="form-check-input"
-                    type="checkbox"
-                    id="scheduleAuction"
-                    checked={isScheduled}
-                    onChange={() => setIsScheduled(!isScheduled)}
-                  />
-                  <label className="form-check-label" htmlFor="scheduleAuction">
-                    Schedule auction for later
-                  </label>
-                </div>
-                
-                {/* Auction Timing */}
-                <h5 className="text-primary mb-3">Auction Timing</h5>
-                
-                {isScheduled ? (
-                  <div className="row mb-4">
-                    <div className="col-md-6 mb-3 mb-md-0">
-                      <label htmlFor="startTime" className="form-label fw-bold">Start Time*</label>
-                      <DatePicker
-                        id="startTime"
-                        selected={startTime}
-                        onChange={date => setFormData({ ...formData, startTime: date })}
-                        showTimeSelect
-                        timeFormat="HH:mm"
-                        timeIntervals={15}
-                        timeCaption="Time"
-                        dateFormat="MMMM d, yyyy h:mm aa"
-                        className="form-control form-control-lg"
-                        minDate={new Date()}
-                        required
-                        placeholderText="Select start date and time"
-                      />
-                      <div className="form-text">
-                        When the auction will become active
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <label htmlFor="endTime" className="form-label fw-bold">End Time*</label>
-                      <DatePicker
-                        id="endTime"
-                        selected={endTime}
-                        onChange={date => setFormData({ ...formData, endTime: date })}
-                        showTimeSelect
-                        timeFormat="HH:mm"
-                        timeIntervals={15}
-                        timeCaption="Time"
-                        dateFormat="MMMM d, yyyy h:mm aa"
-                        className="form-control form-control-lg"
-                        minDate={startTime}
-                        required
-                        placeholderText="Select end date and time"
-                      />
-                      <div className="form-text">
-                        When the auction will close
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mb-4">
-                    <div className="alert alert-info d-flex align-items-center">
-                      <i className="fas fa-info-circle me-3 fs-4"></i>
-                      <div>
-                        <strong>Immediate Auction:</strong> Your auction will start as soon as you submit this form and will end after the duration you select below.
-                      </div>
-                    </div>
-                    
-                    <div className="mb-3">
-                      <label htmlFor="endTime" className="form-label fw-bold">Auction Duration*</label>
-                      <DatePicker
-                        id="endTime"
-                        selected={endTime}
-                        onChange={date => setFormData({ ...formData, endTime: date })}
-                        showTimeSelect
-                        timeFormat="HH:mm"
-                        timeIntervals={15}
-                        timeCaption="Time"
-                        dateFormat="MMMM d, yyyy h:mm aa"
-                        className="form-control form-control-lg"
-                        minDate={new Date(Date.now() + 60 * 60 * 1000)} // At least 1 hour from now
-                        required
-                        placeholderText="Select end date and time"
-                      />
-                      <div className="form-text">
-                        When the auction will close
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Quick Duration Buttons */}
-                <div className="mb-4">
-                  <label className="form-label">Quick Duration:</label>
-                  <div className="d-flex flex-wrap gap-2">
-                    {getSuggestedEndTimes().map((option, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className="btn btn-outline-primary"
-                        onClick={() => handleQuickEndTime(option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Pricing */}
-                <h5 className="text-primary mt-4 mb-3">Pricing</h5>
-                <div className="row mb-4">
-                  <div className="col-md-6 mb-3 mb-md-0">
-                    <label htmlFor="startingBid" className="form-label fw-bold">Starting Bid ($)*</label>
-                    <div className="input-group input-group-lg">
-                      <span className="input-group-text">$</span>
-                      <input
-                        type="number"
-                        className="form-control"
-                        id="startingBid"
-                        name="startingBid"
-                        value={startingBid}
-                        onChange={onChange}
-                        min="0.01"
-                        step="0.01"
-                        required
-                      />
-                    </div>
-                    <div className="form-text">
-                      Initial bid amount
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <label htmlFor="minBidIncrement" className="form-label fw-bold">Minimum Bid Increment ($)*</label>
-                    <div className="input-group input-group-lg">
-                      <span className="input-group-text">$</span>
-                      <input
-                        type="number"
-                        className="form-control"
-                        id="minBidIncrement"
-                        name="minBidIncrement"
-                        value={minBidIncrement}
-                        onChange={onChange}
-                        min="0.01"
-                        step="0.01"
-                        required
-                      />
-                    </div>
-                    <div className="form-text">
-                      Minimum amount a new bid must exceed the current bid
-                    </div>
-                  </div>
-                </div>
-                
-                <button
-                  type="submit"
-                  className="btn btn-primary btn-lg w-100"
-                  disabled={submitting}
+          <div className="card shadow-sm border-0 rounded-4 p-4">
+            <form onSubmit={onSubmit}>
+              {/* Product selector */}
+              <div className="mb-4">
+                <label className="form-label fw-bold">Select Product to Auction*</label>
+                <select
+                  className="form-select form-select-lg"
+                  name="product"
+                  value={selectedProductId}
+                  onChange={handleProductChange}
+                  required
                 >
-                  {submitting ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                      Creating Auction...
-                    </>
-                  ) : (
-                    <>
-                      <i className="fas fa-gavel me-2"></i>
-                      {isScheduled ? 'Schedule Auction' : 'Start Auction Now'}
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-          </div>
-          
-          {/* Auction Guidelines */}
-          <div className="card shadow border-0 rounded-3">
-            <div className="card-header bg-light p-3">
-              <h5 className="mb-0 fw-bold">Auction Guidelines</h5>
-            </div>
-            <div className="card-body p-4">
-              <ul className="mb-0">
-                <li className="mb-2">Be accurate in your product description and condition</li>
-                <li className="mb-2">Set a fair starting price to attract initial bids</li>
-                <li className="mb-2">Respond promptly to questions from potential bidders</li>
-                <li className="mb-2">Choose an appropriate auction duration based on item value and demand</li>
-                <li className="mb-2">Be prepared to ship or deliver the item after the auction ends</li>
-              </ul>
-            </div>
+                  {userProducts.map(p => (
+                    <option key={p._id} value={p._id}>
+                      {p.name} (Base Price: ${p.startingPrice})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selected Product Preview */}
+              {product && (
+                <div className="card bg-light border-0 rounded-3 p-3 mb-4 d-flex flex-row align-items-center gap-3">
+                  <img
+                    src={formatImageUrl(product.images?.[0])}
+                    alt={product.name}
+                    className="rounded-3"
+                    style={{ width: '80px', height: '80px', objectFit: 'cover' }}
+                  />
+                  <div>
+                    <h6 className="fw-bold mb-1">{product.name}</h6>
+                    <span className="badge bg-secondary me-2">{product.category}</span>
+                    <span className="badge bg-info">{product.condition}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Schedule Toggle */}
+              <div className="form-check form-switch mb-4">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="scheduleToggle"
+                  checked={isScheduled}
+                  onChange={(e) => setIsScheduled(e.target.checked)}
+                />
+                <label className="form-check-label fw-semibold" htmlFor="scheduleToggle">
+                  Schedule auction for a future date/time (default is start immediately)
+                </label>
+              </div>
+
+              {/* Start & End Times */}
+              <div className="row g-3 mb-4">
+                {isScheduled && (
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold">Start Time*</label>
+                    <DatePicker
+                      selected={startTime}
+                      onChange={(date) => setFormData(prev => ({ ...prev, startTime: date }))}
+                      showTimeSelect
+                      dateFormat="MMM d, yyyy h:mm aa"
+                      className="form-control"
+                      minDate={new Date()}
+                      required
+                    />
+                  </div>
+                )}
+                <div className={isScheduled ? 'col-md-6' : 'col-12'}>
+                  <label className="form-label fw-bold">End Time*</label>
+                  <DatePicker
+                    selected={endTime}
+                    onChange={(date) => setFormData(prev => ({ ...prev, endTime: date }))}
+                    showTimeSelect
+                    dateFormat="MMM d, yyyy h:mm aa"
+                    className="form-control"
+                    minDate={isScheduled ? startTime : new Date()}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Preset Durations */}
+              <div className="mb-4">
+                <label className="form-label small fw-bold text-muted d-block">Quick Duration Presets:</label>
+                <div className="d-flex flex-wrap gap-2">
+                  {[
+                    { label: '6 Hours', hours: 6 },
+                    { label: '24 Hours (1 Day)', hours: 24 },
+                    { label: '3 Days', hours: 72 },
+                    { label: '7 Days', hours: 168 }
+                  ].map(p => (
+                    <button
+                      key={p.hours}
+                      type="button"
+                      className="btn btn-outline-custom btn-sm"
+                      onClick={() => setDurationHours(p.hours)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pricing */}
+              <div className="row g-3 mb-4">
+                <div className="col-md-6">
+                  <label className="form-label fw-bold">Starting Bid ($)*</label>
+                  <div className="input-group">
+                    <span className="input-group-text">$</span>
+                    <input
+                      type="number"
+                      name="startingBid"
+                      className="form-control"
+                      value={startingBid}
+                      onChange={onChange}
+                      min="1"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label fw-bold">Minimum Increment ($)*</label>
+                  <div className="input-group">
+                    <span className="input-group-text">$</span>
+                    <input
+                      type="number"
+                      name="minBidIncrement"
+                      className="form-control"
+                      value={minBidIncrement}
+                      onChange={onChange}
+                      min="1"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-lg w-100 fw-bold shadow-sm"
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2"></span>
+                    Creating Auction...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-rocket me-2"></i> Launch Auction Now
+                  </>
+                )}
+              </button>
+            </form>
           </div>
         </div>
-        
-        <div className="col-lg-4 mt-4 mt-lg-0">
-          <div className="card shadow border-0 rounded-3 mb-4">
-            <div className="card-header bg-light p-3">
-              <h5 className="mb-0 fw-bold">Auction Summary</h5>
-            </div>
-            <div className="card-body p-4">
-              {product ? (
-                <>
-                  <div className="mb-3">
-                    <span className="text-muted">Product:</span>
-                    <p className="fw-bold mb-0">{product.name}</p>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <span className="text-muted">Start:</span>
-                    <p className="fw-bold mb-0">
-                      {isScheduled 
-                        ? startTime.toLocaleString() 
-                        : 'Immediately upon creation'}
-                    </p>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <span className="text-muted">End:</span>
-                    <p className="fw-bold mb-0">{endTime.toLocaleString()}</p>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <span className="text-muted">Duration:</span>
-                    <p className="fw-bold mb-0">
-                      {Math.ceil((endTime - (isScheduled ? startTime : new Date())) / (1000 * 60 * 60 * 24))} day(s)
-                    </p>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <span className="text-muted">Starting Bid:</span>
-                    <p className="fw-bold mb-0">${parseFloat(startingBid || 0).toFixed(2)}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-muted">Minimum Increment:</span>
-                    <p className="fw-bold mb-0">${parseFloat(minBidIncrement).toFixed(2)}</p>
-                  </div>
-                </>
-              ) : (
-                <p className="text-center text-muted">Please select a product to see auction summary</p>
-              )}
-            </div>
+
+        {/* Sidebar Guidelines */}
+        <div className="col-lg-4">
+          <div className="card shadow-sm border-0 rounded-4 p-4 bg-light">
+            <h5 className="fw-bold mb-3">
+              <i className="fas fa-info-circle text-primary me-2"></i>Best Practices
+            </h5>
+            <ul className="small text-muted ps-3 mb-0">
+              <li className="mb-2">A realistic starting bid encourages competitive bidding wars.</li>
+              <li className="mb-2">Auctions between 24 and 72 hours typically yield the highest closing bids.</li>
+              <li className="mb-2">Once an auction receives active bids, it cannot be deleted to protect bidder integrity.</li>
+              <li className="mb-2">Live bidders are automatically notified via WebSocket upon every bid increment.</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -538,4 +343,4 @@ const CreateAuction = ({ showAlert }) => {
   );
 };
 
-export default CreateAuction; 
+export default CreateAuction;

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { API_BASE_URL } from '../../config/api';
 
 const CreateProduct = ({ showAlert }) => {
   const navigate = useNavigate();
@@ -8,131 +9,135 @@ const CreateProduct = ({ showAlert }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    category: '',
-    condition: '',
+    category: 'Electronics',
+    condition: 'New',
     startingPrice: '',
-    images: []
+    imageUrlInput: ''
   });
   
   const [imageFiles, setImageFiles] = useState([]);
-  const [imagePreview, setImagePreview] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [imageUrls, setImageUrls] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  useEffect(() => {
+    document.title = 'Add Product | Auction Platform';
+  }, []);
   
-  const { name, description, category, condition, startingPrice } = formData;
+  const { name, description, category, condition, startingPrice, imageUrlInput } = formData;
   
-  // List of 10 most popular auction categories
   const categories = [
-    { value: 'Electronics', label: 'Electronics & Gadgets' },
-    { value: 'Collectibles', label: 'Collectibles & Art' },
-    { value: 'Jewelry', label: 'Jewelry & Watches' },
+    { value: 'Electronics', label: 'Electronics & Computing' },
+    { value: 'Jewelry', label: 'Jewelry & Luxury Watches' },
+    { value: 'Collectibles', label: 'Collectibles & Fine Art' },
+    { value: 'Fashion', label: 'Fashion & Sneakers' },
     { value: 'Vehicles', label: 'Vehicles & Automotive' },
-    { value: 'RealEstate', label: 'Real Estate & Property' },
-    { value: 'Fashion', label: 'Fashion & Apparel' },
-    { value: 'Antiques', label: 'Antiques & Vintage' },
-    { value: 'Sports', label: 'Sports Memorabilia' },
-    { value: 'Business', label: 'Business Equipment' },
     { value: 'Other', label: 'Other Items' }
   ];
   
+  const conditions = ['New', 'Like New', 'Good', 'Fair', 'Poor'];
+
   const onChange = e => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
   
-  const handleImageUpload = e => {
+  const handleFileChange = e => {
     const files = Array.from(e.target.files);
-    if (files.length > 5) {
-      showAlert('Maximum 5 images allowed', 'warning');
+    if (files.length + imageFiles.length > 5) {
+      showAlert('Maximum 5 images allowed per product', 'warning');
       return;
     }
     
-    setImageFiles(files);
+    const newFiles = [...imageFiles, ...files];
+    setImageFiles(newFiles);
     
-    // Create previews
-    const previews = files.map(file => URL.createObjectURL(file));
-    setImagePreview(previews);
+    const previews = newFiles.map(file => URL.createObjectURL(file));
+    setImagePreviews(previews);
   };
-  
-  const removeImage = (index) => {
-    const updatedFiles = [...imageFiles];
-    const updatedPreviews = [...imagePreview];
-    
-    updatedFiles.splice(index, 1);
-    updatedPreviews.splice(index, 1);
-    
-    setImageFiles(updatedFiles);
-    setImagePreview(updatedPreviews);
-  };
-  
-  const uploadImages = async () => {
-    try {
-      const formData = new FormData();
-      imageFiles.forEach(file => {
-        formData.append('images', file);
-      });
 
-      const response = await axios.post('http://localhost:5000/api/uploads', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'x-auth-token': localStorage.getItem('token')
-        },
-        onUploadProgress: (progressEvent) => {
-          const progress = (progressEvent.loaded / progressEvent.total) * 100;
-          setUploadProgress(Math.min(Math.round(progress), 100));
-        }
-      });
-
-      return response.data.imageUrls;
-    } catch (err) {
-      console.error('Error uploading images:', err);
-      throw new Error('Error uploading images');
+  const handleAddImageUrl = () => {
+    if (!imageUrlInput.trim()) return;
+    if (imageUrls.length + imageFiles.length >= 5) {
+      showAlert('Maximum 5 images allowed', 'warning');
+      return;
     }
+    setImageUrls([...imageUrls, imageUrlInput.trim()]);
+    setFormData({ ...formData, imageUrlInput: '' });
+  };
+
+  const removeFile = (index) => {
+    const updated = [...imageFiles];
+    updated.splice(index, 1);
+    setImageFiles(updated);
+    setImagePreviews(updated.map(f => URL.createObjectURL(f)));
+  };
+
+  const removeUrl = (index) => {
+    const updated = [...imageUrls];
+    updated.splice(index, 1);
+    setImageUrls(updated);
+  };
+  
+  const uploadFiles = async () => {
+    if (imageFiles.length === 0) return [];
+
+    const uploadData = new FormData();
+    imageFiles.forEach(file => {
+      uploadData.append('images', file);
+    });
+
+    const token = localStorage.getItem('token');
+    const response = await axios.post(`${API_BASE_URL}/api/uploads`, uploadData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${token}`,
+        'x-auth-token': token
+      },
+      onUploadProgress: (progressEvent) => {
+        const progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+        setUploadProgress(progress);
+      }
+    });
+
+    return response.data.imageUrls || [];
   };
   
   const onSubmit = async e => {
     e.preventDefault();
     
-    if (startingPrice <= 0) {
-      showAlert('Starting price must be greater than 0', 'danger');
+    if (parseFloat(startingPrice) <= 0) {
+      showAlert('Starting base price must be greater than 0', 'danger');
       return;
     }
     
-    if (imageFiles.length === 0 && formData.images.length === 0) {
-      showAlert('Please add at least one product image', 'warning');
+    if (imageFiles.length === 0 && imageUrls.length === 0) {
+      showAlert('Please add at least one product photo or image URL', 'warning');
       return;
     }
     
     setSubmitting(true);
     
     try {
-      // Handle image upload
-      let productImages = formData.images;
+      let finalImages = [...imageUrls];
       
       if (imageFiles.length > 0) {
-        const uploadedImageUrls = await uploadImages();
-        productImages = uploadedImageUrls;
+        const uploaded = await uploadFiles();
+        finalImages = [...finalImages, ...uploaded];
       }
       
-      // Create product
-      const res = await axios.post('http://localhost:5000/api/products', {
+      const payload = {
         name,
         description,
         category,
         condition,
-        images: productImages,
+        images: finalImages,
         startingPrice: parseFloat(startingPrice)
-      });
-      
-      showAlert('Product created successfully!', 'success');
-      
-      // Redirect to either create auction page or product details
-      const confirmAuction = window.confirm('Would you like to create an auction for this product now?');
-      
-      if (confirmAuction) {
-        navigate(`/create-auction/${res.data._id}`);
-      } else {
-        navigate(`/products/${res.data._id}`);
-      }
+      };
+
+      const res = await axios.post(`${API_BASE_URL}/api/products`, payload);
+      showAlert('Product created successfully! Now set up the auction.', 'success');
+      navigate(`/create-auction/${res.data._id}`);
     } catch (err) {
       console.error('Error creating product:', err);
       showAlert(err.response?.data?.message || 'Error creating product', 'danger');
@@ -141,260 +146,217 @@ const CreateProduct = ({ showAlert }) => {
   };
   
   return (
-    <div className="container">
-      <div className="row mb-4">
-        <div className="col-md-8">
-          <h1 className="my-4 text-primary">Add New Product</h1>
-          <p className="lead text-muted">Create a new product to sell through auction.</p>
+    <div className="container py-4">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h1 className="fw-bold mb-1">Add Product for Auction</h1>
+          <p className="text-muted mb-0">Provide product specifications, high-resolution photos, and starting price.</p>
         </div>
-        <div className="col-md-4 text-md-end">
-          <Link to="/dashboard" className="btn btn-outline-primary mt-4">
-            <i className="fas fa-arrow-left me-2"></i>Back to Dashboard
-          </Link>
-        </div>
+        <Link to="/dashboard" className="btn btn-outline-secondary">
+          <i className="fas fa-arrow-left me-1"></i> Dashboard
+        </Link>
       </div>
-      
-      <div className="row">
+
+      <div className="row g-4">
         <div className="col-lg-8">
-          <div className="card shadow border-0 rounded-3 mb-4">
-            <div className="card-header bg-gradient-primary-to-secondary p-4">
-              <h5 className="mb-0 text-white fw-bold">Product Information</h5>
-            </div>
-            <div className="card-body p-4">
-              <form onSubmit={onSubmit}>
-                <div className="mb-4">
-                  <label htmlFor="name" className="form-label fw-bold">Product Name*</label>
-                  <input
-                    type="text"
-                    className="form-control form-control-lg"
-                    id="name"
-                    name="name"
-                    value={name}
+          <div className="card shadow-sm border-0 rounded-4 p-4">
+            <form onSubmit={onSubmit}>
+              <div className="mb-4">
+                <label className="form-label fw-bold">Product Title*</label>
+                <input
+                  type="text"
+                  name="name"
+                  className="form-control form-control-lg"
+                  placeholder="e.g. Vintage 1968 Omega Speedmaster Chronograph"
+                  value={name}
+                  onChange={onChange}
+                  required
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="form-label fw-bold">Full Description*</label>
+                <textarea
+                  name="description"
+                  className="form-control"
+                  rows="5"
+                  placeholder="Describe condition, history, included accessories, dimensions, serial numbers, and highlights..."
+                  value={description}
+                  onChange={onChange}
+                  required
+                ></textarea>
+              </div>
+
+              <div className="row g-3 mb-4">
+                <div className="col-md-6">
+                  <label className="form-label fw-bold">Category*</label>
+                  <select
+                    name="category"
+                    className="form-select"
+                    value={category}
                     onChange={onChange}
-                    placeholder="Enter product name"
+                    required
+                  >
+                    {categories.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label fw-bold">Condition*</label>
+                  <select
+                    name="condition"
+                    className="form-select"
+                    value={condition}
+                    onChange={onChange}
+                    required
+                  >
+                    {conditions.map(cond => (
+                      <option key={cond} value={cond}>{cond}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="form-label fw-bold">Starting Base Price ($)*</label>
+                <div className="input-group">
+                  <span className="input-group-text">$</span>
+                  <input
+                    type="number"
+                    name="startingPrice"
+                    className="form-control"
+                    placeholder="0.00"
+                    value={startingPrice}
+                    onChange={onChange}
+                    min="1"
+                    step="0.01"
                     required
                   />
                 </div>
+                <small className="form-text text-muted">Initial reserve or opening bid price for the auction.</small>
+              </div>
+
+              {/* Image Upload / URL Section */}
+              <div className="mb-4">
+                <label className="form-label fw-bold">Product Photos (Max 5)</label>
                 
-                <div className="mb-4">
-                  <label htmlFor="description" className="form-label fw-bold">Description*</label>
-                  <textarea
+                {/* File upload */}
+                <div className="border border-2 border-dashed rounded-3 p-4 text-center mb-3 bg-light">
+                  <i className="fas fa-cloud-upload-alt fa-2x text-primary mb-2 d-block"></i>
+                  <p className="mb-2 fw-semibold">Upload Local Image Files</p>
+                  <input
+                    type="file"
+                    className="form-control w-75 mx-auto"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileChange}
+                  />
+                  <small className="text-muted d-block mt-2">Supports JPG, PNG, WEBP, GIF up to 10MB</small>
+                </div>
+
+                {/* Or Image URL */}
+                <div className="input-group mb-3">
+                  <input
+                    type="url"
+                    name="imageUrlInput"
                     className="form-control"
-                    id="description"
-                    name="description"
-                    value={description}
+                    placeholder="Or paste an image web link (Unsplash, Imgur, CDN)..."
+                    value={imageUrlInput}
                     onChange={onChange}
-                    rows="5"
-                    placeholder="Provide a detailed description of your product"
-                    required
-                  ></textarea>
-                  <div className="form-text">
-                    Include details like brand, model, dimensions, features, and condition notes.
-                  </div>
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={handleAddImageUrl}
+                  >
+                    Add URL
+                  </button>
                 </div>
-                
-                <div className="row mb-4">
-                  <div className="col-md-6">
-                    <label htmlFor="category" className="form-label fw-bold">Category*</label>
-                    <select
-                      className="form-select form-select-lg"
-                      id="category"
-                      name="category"
-                      value={category}
-                      onChange={onChange}
-                      required
-                    >
-                      <option value="">Select Category</option>
-                      {categories.map(cat => (
-                        <option key={cat.value} value={cat.value}>{cat.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-md-6">
-                    <label htmlFor="condition" className="form-label fw-bold">Condition*</label>
-                    <select
-                      className="form-select form-select-lg"
-                      id="condition"
-                      name="condition"
-                      value={condition}
-                      onChange={onChange}
-                      required
-                    >
-                      <option value="">Select Condition</option>
-                      <option value="New">New</option>
-                      <option value="Like New">Like New</option>
-                      <option value="Good">Good</option>
-                      <option value="Fair">Fair</option>
-                      <option value="Poor">Poor</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="mb-4">
-                  <label htmlFor="startingPrice" className="form-label fw-bold">Starting Price ($)*</label>
-                  <div className="input-group input-group-lg">
-                    <span className="input-group-text">$</span>
-                    <input
-                      type="number"
-                      className="form-control"
-                      id="startingPrice"
-                      name="startingPrice"
-                      value={startingPrice}
-                      onChange={onChange}
-                      min="0.01"
-                      step="0.01"
-                      placeholder="0.00"
-                      required
-                    />
-                  </div>
-                  <div className="form-text">
-                    This will be the starting price for your auction.
-                  </div>
-                </div>
-                
-                <div className="mb-4">
-                  <label className="form-label fw-bold">Product Images*</label>
-                  <div className="card bg-light">
-                    <div className="card-body">
-                      <div className="mb-3">
-                        <input
-                          type="file"
-                          className="form-control"
-                          id="images"
-                          accept="image/*"
-                          multiple
-                          onChange={handleImageUpload}
+
+                {/* Previews */}
+                {(imagePreviews.length > 0 || imageUrls.length > 0) && (
+                  <div className="d-flex flex-wrap gap-2 pt-2">
+                    {imageUrls.map((url, i) => (
+                      <div key={`url-${i}`} className="position-relative">
+                        <img
+                          src={url}
+                          alt="preview"
+                          className="rounded-3 border"
+                          style={{ width: '80px', height: '80px', objectFit: 'cover' }}
                         />
-                        <div className="form-text">
-                          Upload up to 5 high-quality images of your product. First image will be the main display image.
-                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0 px-1"
+                          onClick={() => removeUrl(i)}
+                          style={{ fontSize: '10px' }}
+                        >
+                          &times;
+                        </button>
                       </div>
-                      
-                      {imagePreview.length > 0 && (
-                        <div className="mb-3">
-                          <label className="form-label">Image Previews:</label>
-                          <div className="d-flex flex-wrap gap-2">
-                            {imagePreview.map((src, index) => (
-                              <div key={index} className="position-relative">
-                                <img 
-                                  src={src} 
-                                  alt={`Preview ${index}`} 
-                                  className="img-thumbnail" 
-                                  style={{width: '120px', height: '120px', objectFit: 'cover'}} 
-                                />
-                                <button 
-                                  type="button" 
-                                  className="btn btn-danger btn-sm position-absolute top-0 end-0" 
-                                  onClick={() => removeImage(index)}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    ))}
+                    {imagePreviews.map((src, i) => (
+                      <div key={`file-${i}`} className="position-relative">
+                        <img
+                          src={src}
+                          alt="preview"
+                          className="rounded-3 border"
+                          style={{ width: '80px', height: '80px', objectFit: 'cover' }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0 px-1"
+                          onClick={() => removeFile(i)}
+                          style={{ fontSize: '10px' }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {uploadProgress > 0 && uploadProgress < 100 && (
+                <div className="progress mb-4">
+                  <div className="progress-bar progress-bar-striped progress-bar-animated" style={{ width: `${uploadProgress}%` }}>
+                    {uploadProgress}%
                   </div>
                 </div>
-                
-                <button
-                  type="submit"
-                  className="btn btn-primary btn-lg w-100"
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <>
-                      {uploadProgress > 0 ? (
-                        <>
-                          <div className="progress" style={{height: '20px'}}>
-                            <div 
-                              className="progress-bar progress-bar-striped progress-bar-animated" 
-                              role="progressbar" 
-                              style={{width: `${uploadProgress}%`}} 
-                              aria-valuenow={uploadProgress} 
-                              aria-valuemin="0" 
-                              aria-valuemax="100"
-                            >
-                              {uploadProgress}%
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                          Creating Product...
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <i className="fas fa-plus-circle me-2"></i>
-                      Create Product
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-lg w-100 fw-bold shadow-sm"
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2"></span>
+                    Creating Product...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-check-circle me-2"></i> Save & Continue to Auction Setup
+                  </>
+                )}
+              </button>
+            </form>
           </div>
         </div>
-        
+
+        {/* Sidebar */}
         <div className="col-lg-4">
-          <div className="card shadow border-0 rounded-3">
-            <div className="card-header bg-gradient-primary-to-secondary p-4">
-              <h5 className="mb-0 text-white fw-bold">Tips for Success</h5>
-            </div>
-            <div className="card-body p-4">
-              <ul className="list-group list-group-flush">
-                <li className="list-group-item px-0 d-flex align-items-center border-0">
-                  <div className="badge bg-primary rounded-pill me-3">1</div>
-                  <div>
-                    <strong>Quality Photos</strong>
-                    <p className="mb-0 text-muted small">Use clear, well-lit photos from multiple angles</p>
-                  </div>
-                </li>
-                <li className="list-group-item px-0 d-flex align-items-center border-0">
-                  <div className="badge bg-primary rounded-pill me-3">2</div>
-                  <div>
-                    <strong>Detailed Description</strong>
-                    <p className="mb-0 text-muted small">Be thorough and honest about condition</p>
-                  </div>
-                </li>
-                <li className="list-group-item px-0 d-flex align-items-center border-0">
-                  <div className="badge bg-primary rounded-pill me-3">3</div>
-                  <div>
-                    <strong>Competitive Pricing</strong>
-                    <p className="mb-0 text-muted small">Research similar items to set a fair starting price</p>
-                  </div>
-                </li>
-                <li className="list-group-item px-0 d-flex align-items-center border-0">
-                  <div className="badge bg-primary rounded-pill me-3">4</div>
-                  <div>
-                    <strong>Correct Category</strong>
-                    <p className="mb-0 text-muted small">Choose the most specific category for better visibility</p>
-                  </div>
-                </li>
-                <li className="list-group-item px-0 d-flex align-items-center border-0">
-                  <div className="badge bg-primary rounded-pill me-3">5</div>
-                  <div>
-                    <strong>Quick Responses</strong>
-                    <p className="mb-0 text-muted small">Be ready to answer questions about your item</p>
-                  </div>
-                </li>
-              </ul>
-              
-              <div className="alert alert-info mt-4">
-                <div className="d-flex">
-                  <div className="me-3">
-                    <i className="fas fa-info-circle fa-2x"></i>
-                  </div>
-                  <div>
-                    <h6 className="mb-1">Next Steps</h6>
-                    <p className="mb-0 small">After creating your product, you can immediately set up an auction or do it later from your dashboard.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="card shadow-sm border-0 rounded-4 p-4 bg-light">
+            <h5 className="fw-bold mb-3">
+              <i className="fas fa-lightbulb text-warning me-2"></i>Seller Advice
+            </h5>
+            <ul className="small text-muted ps-3 mb-0">
+              <li className="mb-2">Clean, well-lit photos directly increase auction engagement by over 300%.</li>
+              <li className="mb-2">Include visible markings, original packaging, and provenance details.</li>
+              <li className="mb-2">Once created, you will be redirected to schedule the starting time and auction duration.</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -402,4 +364,4 @@ const CreateProduct = ({ showAlert }) => {
   );
 };
 
-export default CreateProduct; 
+export default CreateProduct;

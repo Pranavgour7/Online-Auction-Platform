@@ -1,0 +1,34 @@
+{
+  "name": "auction-platform",
+  "version": "2.0.0",
+  "description": "Enterprise-grade real-time online auction platform built with the MERN stack and Socket.IO",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "server": "npm --prefix server run server",
+    "client": "npm --prefix client start",
+    "dev": "npx concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm --prefix server run server\" \"npm --prefix client start\"",
+    "build": "cd client && npm install && npm run build",
+    "seed": "node server/seed.js",
+    "test": "cd client && npm test -- --watchAll=false",
+    "test:server": "cd server && npm test",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install"
+  },
+  "keywords": [
+    "auction",
+    "real-time",
+    "mern",
+    "socket.io",
+    "mongodb",
+    "express",
+    "react",
+    "nodejs",
+    "bidding"
+  ],
+  "author": "Pranav Gour",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
+

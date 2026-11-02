@@ -1,54 +1,33 @@
 import React, { useState } from 'react';
+import { formatImageUrl } from '../../config/api';
 
 /**
- * A component that displays an image with fallback handling
- * @param {string} src - Primary image source
- * @param {string} fallbackSrc - Fallback image source if primary fails
- * @param {string} alt - Alt text for the image
- * @param {Object} props - Additional props to pass to the img element
+ * Modern SVG placeholder data URI for reliable fallback rendering
  */
-const ImageWithFallback = ({ src, fallbackSrc, alt, ...props }) => {
-  const [imgSrc, setImgSrc] = useState(src);
-  const [imgError, setImgError] = useState(false);
+const DEFAULT_FALLBACK_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%23f1f5f9'/%3E%3Cpath d='M160 130a20 20 0 1 0 40 0 20 20 0 0 0-40 0zm-30 65l35-45 25 30 35-45 45 60H130z' fill='%23cbd5e1'/%3E%3Ctext x='50%25' y='82%25' text-anchor='middle' font-family='sans-serif' font-size='14' fill='%2394a3b8'%3EAuction Item%3C/text%3E%3C/svg%3E";
 
-  const onError = () => {
-    if (!imgError) {
+const ImageWithFallback = ({ src, fallbackSrc = DEFAULT_FALLBACK_SVG, alt = 'Item image', className, style, ...props }) => {
+  const [imgSrc, setImgSrc] = useState(() => (src ? formatImageUrl(src) : fallbackSrc));
+  const [hasError, setHasError] = useState(false);
+
+  const handleError = () => {
+    if (!hasError) {
+      setHasError(true);
       setImgSrc(fallbackSrc);
-      setImgError(true);
     }
-  };
-
-  // Function to fix relative URLs if needed
-  const fixUrl = (url) => {
-    if (!url) return fallbackSrc;
-    
-    // If already absolute URL, return as is
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url;
-    }
-    
-    // If it starts with 'uploads/' or '/uploads/', prepend server URL
-    if (url.startsWith('uploads/') || url.startsWith('/uploads/')) {
-      return `http://localhost:5000/${url.startsWith('/') ? url.substring(1) : url}`;
-    }
-    
-    // If it's a relative URL, make sure it's correct
-    if (url.startsWith('/')) {
-      return `http://localhost:5000${url}`;
-    }
-    
-    // Otherwise, assume it's relative to server
-    return `http://localhost:5000/${url}`;
   };
 
   return (
     <img
-      src={fixUrl(imgSrc)}
-      alt={alt || 'Image'}
-      onError={onError}
+      src={imgSrc}
+      alt={alt}
+      onError={handleError}
+      className={className}
+      style={style}
+      loading="lazy"
       {...props}
     />
   );
 };
 
-export default ImageWithFallback; 
+export default ImageWithFallback;

@@ -3,42 +3,38 @@ const User = require('../models/User');
 
 const auth = async (req, res, next) => {
   try {
-    // Get token from header
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+    // Get token from Authorization header or x-auth-token header
+    let token = req.header('Authorization')?.replace('Bearer ', '');
     if (!token) {
-      console.log('No token provided in request');
+      token = req.header('x-auth-token');
+    }
+
+    if (!token) {
       return res.status(401).json({ message: 'No authentication token, access denied' });
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log('Token verified, user ID:', decoded.id);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_jwt_secret_dev');
     
     // Find user by id
     const user = await User.findById(decoded.id);
     
     if (!user) {
-      console.log('User not found with ID:', decoded.id);
       return res.status(401).json({ message: 'User not found' });
     }
     
-    // Store the full user object in req.fullUser for any methods that need it
+    // Store user info in request
     req.fullUser = user;
-    
-    // Set user in request - use the string version of _id
     req.user = {
-      id: user._id.toString(), // Convert ObjectId to string
+      id: user._id.toString(),
       username: user.username,
       email: user.email,
       role: user.role
     };
     
-    console.log('User authenticated:', req.user.username, 'with ID:', req.user.id);
     next();
   } catch (error) {
-    console.error('Authentication error:', error.message);
-    res.status(401).json({ message: 'Token is not valid', error: error.message });
+    res.status(401).json({ message: 'Token is not valid or has expired', error: error.message });
   }
 };
 
@@ -51,4 +47,4 @@ const admin = (req, res, next) => {
   }
 };
 
-module.exports = { auth, admin }; 
+module.exports = { auth, admin };

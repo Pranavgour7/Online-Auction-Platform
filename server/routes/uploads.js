@@ -18,7 +18,7 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${uniqueSuffix}${ext}`);
   }
 });
@@ -27,12 +27,12 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB file size limit
+    fileSize: 10 * 1024 * 1024, // 10MB file size limit
   },
   fileFilter: function (req, file, cb) {
-    // Accept images only
-    if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
-      return cb(new Error('Only image files are allowed!'), false);
+    // Accept images only (including webp and svg)
+    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
+      return cb(new Error('Only image files (jpg, jpeg, png, gif, webp, svg) are allowed!'), false);
     }
     cb(null, true);
   }
@@ -43,16 +43,17 @@ const upload = multer({
 // @access  Private
 router.post('/', auth, upload.array('images', 5), async (req, res) => {
   try {
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const imageUrls = req.files.map(file => 
-      // Construct full URL for the image
-      `${baseUrl}/uploads/${file.filename.replace(/\\/g, '/')}`
-    );
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'No image files uploaded' });
+    }
+
+    // Return relative /uploads/ path for portability across environments
+    const imageUrls = req.files.map(file => `/uploads/${file.filename}`);
     
     res.json({ 
       success: true, 
       imageUrls,
-      message: `Successfully uploaded ${req.files.length} files`
+      message: `Successfully uploaded ${req.files.length} file(s)`
     });
   } catch (error) {
     console.error('Error uploading files:', error);
@@ -69,9 +70,10 @@ router.post('/', auth, upload.array('images', 5), async (req, res) => {
 // @access  Public
 router.get('/:filename', (req, res) => {
   const filename = req.params.filename;
-  const filepath = path.join(uploadsDir, filename);
+  // Prevent directory traversal
+  const safeFilename = path.basename(filename);
+  const filepath = path.join(uploadsDir, safeFilename);
   
-  // Check if file exists
   if (fs.existsSync(filepath)) {
     res.sendFile(filepath);
   } else {
@@ -87,15 +89,19 @@ router.get('/:filename', (req, res) => {
 // @access  Private
 router.delete('/:filename', auth, (req, res) => {
   const filename = req.params.filename;
-  const filepath = path.join(uploadsDir, filename);
+  const safeFilename = path.basename(filename);
+  const filepath = path.join(uploadsDir, safeFilename);
   
-  // Check if file exists
   if (fs.existsSync(filepath)) {
-    fs.unlinkSync(filepath);
-    res.json({ 
-      success: true, 
-      message: 'File deleted successfully' 
-    });
+    try {
+      fs.unlinkSync(filepath);
+      res.json({ 
+        success: true, 
+        message: 'File deleted successfully' 
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Failed to delete file' });
+    }
   } else {
     res.status(404).json({ 
       success: false, 
@@ -104,4 +110,4 @@ router.delete('/:filename', auth, (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

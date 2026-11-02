@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthContext from '../../context/AuthContext';
 
@@ -11,6 +11,10 @@ const Login = ({ showAlert }) => {
   
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = 'Login | Auction Platform';
+  }, []);
   
   const { email, password } = formData;
   
@@ -23,7 +27,6 @@ const Login = ({ showAlert }) => {
     setLoading(true);
     
     const result = await login(email, password);
-    
     setLoading(false);
     
     if (result.success) {
@@ -35,10 +38,10 @@ const Login = ({ showAlert }) => {
   };
   
   return (
-    <div className="container">
+    <div className="container py-4">
       <div className="row justify-content-center">
-        <div className="col-md-6">
-          <div className="card shadow-sm">
+        <div className="col-md-6 col-lg-5">
+          <div className="card shadow-sm border-0">
             <div className="card-body p-4">
               <h2 className="text-center mb-4">Login</h2>
               <form onSubmit={onSubmit}>
@@ -51,6 +54,7 @@ const Login = ({ showAlert }) => {
                     name="email"
                     value={email}
                     onChange={onChange}
+                    placeholder="Enter email"
                     required
                   />
                 </div>
@@ -63,6 +67,7 @@ const Login = ({ showAlert }) => {
                     name="password"
                     value={password}
                     onChange={onChange}
+                    placeholder="Enter password"
                     required
                     minLength="6"
                   />
@@ -81,7 +86,7 @@ const Login = ({ showAlert }) => {
                 </button>
               </form>
               <div className="text-center mt-3">
-                <p>
+                <p className="mb-0 text-muted">
                   Don't have an account? <Link to="/register">Register</Link>
                 </p>
               </div>
@@ -93,4 +98,4 @@ const Login = ({ showAlert }) => {
   );
 };
 
-export default Login; 
+export default Login;

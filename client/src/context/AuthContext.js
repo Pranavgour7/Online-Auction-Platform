@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/api';
 
 const AuthContext = createContext();
 
@@ -9,24 +10,27 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Set axios default headers
+  // Configure axios default Authorization header
   if (token) {
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   } else {
     delete axios.defaults.headers.common['Authorization'];
   }
 
-  // Load user on initial render
+  // Load user profile on initial render
   useEffect(() => {
     const loadUser = async () => {
-      if (token) {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
         try {
-          const res = await axios.get('http://localhost:5000/api/users/profile');
+          axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          const res = await axios.get(`${API_BASE_URL}/api/users/profile`);
           setUser(res.data);
           setIsAuthenticated(true);
         } catch (err) {
-          console.error('Error loading user:', err);
+          console.error('Error loading user profile:', err);
           localStorage.removeItem('token');
+          delete axios.defaults.headers.common['Authorization'];
           setToken(null);
           setUser(null);
           setIsAuthenticated(false);
@@ -41,9 +45,10 @@ export const AuthProvider = ({ children }) => {
   // Register user
   const register = async (formData) => {
     try {
-      const res = await axios.post('http://localhost:5000/api/users/register', formData);
+      const res = await axios.post(`${API_BASE_URL}/api/users/register`, formData);
       
       localStorage.setItem('token', res.data.token);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
       setToken(res.data.token);
       setUser(res.data.user);
       setIsAuthenticated(true);
@@ -52,7 +57,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       return { 
         success: false, 
-        error: err.response?.data?.message || 'Registration failed' 
+        error: err.response?.data?.message || 'Registration failed. Please try again.' 
       };
     }
   };
@@ -60,9 +65,10 @@ export const AuthProvider = ({ children }) => {
   // Login user
   const login = async (email, password) => {
     try {
-      const res = await axios.post('http://localhost:5000/api/users/login', { email, password });
+      const res = await axios.post(`${API_BASE_URL}/api/users/login`, { email, password });
       
       localStorage.setItem('token', res.data.token);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
       setToken(res.data.token);
       setUser(res.data.user);
       setIsAuthenticated(true);
@@ -71,7 +77,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       return { 
         success: false, 
-        error: err.response?.data?.message || 'Login failed' 
+        error: err.response?.data?.message || 'Login failed. Invalid credentials.' 
       };
     }
   };
@@ -79,6 +85,7 @@ export const AuthProvider = ({ children }) => {
   // Logout user
   const logout = () => {
     localStorage.removeItem('token');
+    delete axios.defaults.headers.common['Authorization'];
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
@@ -87,7 +94,7 @@ export const AuthProvider = ({ children }) => {
   // Update user profile
   const updateProfile = async (formData) => {
     try {
-      const res = await axios.put('http://localhost:5000/api/users/profile', formData);
+      const res = await axios.put(`${API_BASE_URL}/api/users/profile`, formData);
       setUser(res.data);
       return { success: true };
     } catch (err) {
@@ -101,7 +108,7 @@ export const AuthProvider = ({ children }) => {
   // Change password
   const changePassword = async (currentPassword, newPassword) => {
     try {
-      await axios.put('http://localhost:5000/api/users/password', { currentPassword, newPassword });
+      await axios.put(`${API_BASE_URL}/api/users/password`, { currentPassword, newPassword });
       return { success: true };
     } catch (err) {
       return { 
@@ -130,4 +137,4 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-export default AuthContext; 
+export default AuthContext;

@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+package-lock.json
+client/package-lock.json
+server/package-lock.json
+
+# Environment Variables
+.env
+server/.env
+client/.env.local
+client/.env.development.local
+client/.env.test.local
+client/.env.production.local
+
+# Production Build
+client/build/
+dist/
+
+# Logs & Database
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+server/mongodb_data/
+*.log
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
