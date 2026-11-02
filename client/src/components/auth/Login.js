@@ -36,6 +36,19 @@ const Login = ({ showAlert }) => {
       showAlert(result.error, 'danger');
     }
   };
+
+  const handleDemoLogin = async (demoEmail, demoPassword) => {
+    setFormData({ email: demoEmail, password: demoPassword });
+    setLoading(true);
+    const result = await login(demoEmail, demoPassword);
+    setLoading(false);
+    if (result.success) {
+      showAlert(`Logged in as ${demoEmail}! Welcome.`, 'success');
+      navigate('/dashboard');
+    } else {
+      showAlert(result.error, 'danger');
+    }
+  };
   
   return (
     <div className="container py-4">
@@ -85,6 +98,29 @@ const Login = ({ showAlert }) => {
                   ) : 'Login'}
                 </button>
               </form>
+
+              <div className="mt-4 pt-3 border-top">
+                <p className="text-muted small text-center mb-2">⚡ Quick 1-Click Demo Access:</p>
+                <div className="d-flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary btn-sm flex-fill"
+                    disabled={loading}
+                    onClick={() => handleDemoLogin('demo@auction.com', 'password123')}
+                  >
+                    <i className="fa-solid fa-user me-1"></i> Demo User
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm flex-fill"
+                    disabled={loading}
+                    onClick={() => handleDemoLogin('admin@auction.com', 'password123')}
+                  >
+                    <i className="fa-solid fa-shield-halved me-1"></i> Admin User
+                  </button>
+                </div>
+              </div>
+
               <div className="text-center mt-3">
                 <p className="mb-0 text-muted">
                   Don't have an account? <Link to="/register">Register</Link>
